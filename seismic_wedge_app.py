@@ -232,7 +232,7 @@ fig.set_facecolor('white')
 gs = gridspec.GridSpec(3, 1, height_ratios=[1, 1, 1])
 
 #excursion = 10  # Set this value as per your requirements
-ntrc = 100      # Set this value as per your requirements
+ntrc = 60      # Set this value as per your requirements
 
 
 ax0 = fig.add_subplot(gs[0])
