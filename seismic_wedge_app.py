@@ -94,7 +94,8 @@ def plot_vawig(axhdl, data, t, excursion, highlight=None):
 
 def ricker(cfreq, phase, dt, wvlt_length):
     nsamp = int(wvlt_length/dt + 1)
-    t = np.linspace(-wvlt_length/2, (wvlt_length-dt)/2, wvlt_length/dt)
+    #t = np.linspace(-wvlt_length/2, (wvlt_length-dt)/2, wvlt_length/dt)
+    t = np.linspace(-wvlt_length/2, (wvlt_length-dt)/2, int(wvlt_length/dt))
     wvlt = (1.0 - 2.0*(np.pi**2)*(cfreq**2)*(t**2)) * np.exp(-(np.pi**2)*(cfreq**2)*(t**2))
     
     if phase != 0:
