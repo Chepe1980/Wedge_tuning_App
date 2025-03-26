@@ -232,7 +232,7 @@ fig.set_facecolor('white')
 gs = gridspec.GridSpec(3, 1, height_ratios=[1, 1, 1])
 
 #excursion = 10  # Set this value as per your requirements
-#ntrc = 100      # Set this value as per your requirements
+ntrc = 100      # Set this value as per your requirements
 
 
 ax0 = fig.add_subplot(gs[0])
@@ -270,7 +270,7 @@ ax1.set_ylabel('Time (s)')
 
 ax2 = fig.add_subplot(gs[2])
 ax2.plot(syn_zo[:,lyr_indx[:,0]], color='blue')
-ax2.set_xlim((excursion, ntrc+excursion))
+ax2.set_xlim((-excursion, ntrc+excursion))
 ax2.axvline(tuning_trace, color='k', lw=2)
 ax2.grid()
 ax2.set_title('Upper interface amplitude')
