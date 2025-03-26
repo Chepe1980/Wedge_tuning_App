@@ -234,8 +234,6 @@ gs = gridspec.GridSpec(3, 1, height_ratios=[1, 1, 1])
 excursion = 10  # Set this value as per your requirements
 ntrc = 100      # Set this value as per your requirements
 
-# Now set xlim with these values
-ax0.set_xlim((-excursion, ntrc + excursion))
 
 ax0 = fig.add_subplot(gs[0])
 ax0.plot(lyr_times[:,0], color='blue', lw=1.5)
