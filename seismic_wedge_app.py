@@ -55,7 +55,7 @@ dt = st.sidebar.number_input("Time step (s)", value=0.0001)
 st.sidebar.subheader("Display Parameters")
 min_plot_time = st.sidebar.number_input("Min display time (s)", value=0.15)
 max_plot_time = st.sidebar.number_input("Max display time (s)", value=0.3)
-excursion = st.sidebar.number_input("Trace excursion", value=2)
+excursion = st.sidebar.number_input("Trace excursion", value=0.5)
 
 # Main app
 st.title("Seismic Wedge Modeling App")
