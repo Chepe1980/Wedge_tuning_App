@@ -4,5 +4,6 @@ pandas
 scipy
 numpy
 pywt
-pywavelets
+PyWavelets
+
 
