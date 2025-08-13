@@ -220,7 +220,7 @@ def create_well_log_plot(df, layer1_depth, layer2_depth, layer3_depth):
     
     # Add markers for selected layers
     fig.add_trace(go.Scatter(
-        x=[df.loc[layer1_depth, 'Vp'], 
+        x=[df.loc[layer1_depth, 'Vp']], 
         y=[layer1_depth],
         mode='markers',
         name='Layer 1',
@@ -228,7 +228,7 @@ def create_well_log_plot(df, layer1_depth, layer2_depth, layer3_depth):
     ))
     
     fig.add_trace(go.Scatter(
-        x=[df.loc[layer2_depth, 'Vp'], 
+        x=[df.loc[layer2_depth, 'Vp']], 
         y=[layer2_depth],
         mode='markers',
         name='Layer 2',
@@ -236,7 +236,7 @@ def create_well_log_plot(df, layer1_depth, layer2_depth, layer3_depth):
     ))
     
     fig.add_trace(go.Scatter(
-        x=[df.loc[layer3_depth, 'Vp'], 
+        x=[df.loc[layer3_depth, 'Vp']], 
         y=[layer3_depth],
         mode='markers',
         name='Layer 3',
@@ -415,7 +415,7 @@ with st.spinner('Generating synthetic data...'):
     syn_zo = np.array(syn_zo)
     lyr_times = np.array(lyr_times)
     lyr_indx = np.round(lyr_times/dt).astype(int)
-    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min)
+    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min
 
 # ==============================================
 # RESULTS DISPLAY
