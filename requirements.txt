@@ -5,5 +5,7 @@ scipy
 numpy
 pywt
 PyWavelets
+plotly
+
 
 
