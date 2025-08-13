@@ -1,7 +1,6 @@
+# seismic_wedge_modeling_app.py
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
 import scipy.signal as signal
 from numpy.fft import fft, ifft, fftfreq, fftshift, ifftshift
 import plotly.graph_objects as go
