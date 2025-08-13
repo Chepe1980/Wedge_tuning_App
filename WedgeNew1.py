@@ -556,8 +556,8 @@ with st.spinner('Generating synthetic data...'):
 # RESULTS DISPLAY
 # ==============================================
 
-tab1, tab2, tab3, tab4 = st.tabs(["Time Domain", "Frequency Domain", "Amplitude Analysis", "Wavelet"])
-
+#tab1, tab2, tab3, tab4 = st.tabs(["Time Domain", "Frequency Domain", "Amplitude Analysis", "Wavelet"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Time Domain", "Frequency Domain", "Amplitude Analysis", "Wavelet", "Help & Theory"])
 with tab1:
     st.subheader("Seismic Wedge Model (Time Domain)")
     seismic_fig = create_seismic_plot(
@@ -594,5 +594,129 @@ with tab4:
         yaxis_title='Amplitude'
     )
     st.plotly_chart(wavelet_fig, use_container_width=True)
+
+with tab5:
+    st.header("Seismic Wedge Modeling Help & Theory")
+    
+    with st.expander("Theory Behind Wedge Models"):
+        st.markdown("""
+        ### Seismic Wedge Model Theory
+        
+        A seismic wedge model simulates how a thin layer (the "wedge") between two other layers responds to seismic waves. 
+        The model helps us understand:
+        
+        - **Tuning thickness**: The thickness below which the top and base reflections of a layer interfere constructively
+        - **Resolution limits**: How thin a layer can be and still be detectable
+        - **Amplitude behavior**: How reflection amplitudes change with layer thickness
+        
+        #### Key Concepts:
+        
+        1. **Reflection Coefficients**:
+           - Calculated using:  
+             $$ RC = \\frac{\\rho_2V_2 - \\rho_1V_1}{\\rho_2V_2 + \\rho_1V_1} $$
+           - Where ρ is density and V is velocity
+        
+        2. **Convolution Model**:
+           - The synthetic seismogram is created by convolving the reflectivity series with the source wavelet
+        
+        3. **Tuning Effect**:
+           - When layer thickness is ≤ λ/4 (λ = wavelength), reflections from top and base interfere
+           - Maximum constructive interference occurs at tuning thickness
+        
+        4. **Frequency Content**:
+           - Thinner layers affect higher frequencies more than lower frequencies
+        """)
+    
+    with st.expander("Step-by-Step Guide"):
+        st.markdown("""
+        ### How to Use This App
+        
+        1. **Input Data Preparation**:
+           - Upload a CSV with well log data (Depth, Vp, Vs, Density columns) OR
+           - Manually enter layer properties in the sidebar
+        
+        2. **Set Wedge Parameters**:
+           - Define minimum/maximum thickness and thickness step
+           - These control the range of wedge geometries to model
+        
+        3. **Configure Wavelet**:
+           - Choose between Ricker or Bandpass wavelet
+           - Set frequency parameters appropriate for your target
+           - Adjust phase if needed (0° for zero-phase)
+        
+        4. **Time Parameters**:
+           - Set time window (start/end time) and sample interval
+           - Ensure the window captures all events of interest
+        
+        5. **Display Settings**:
+           - Adjust colormap and visualization options
+           - Set appropriate time range for display
+        
+        6. **Interpret Results**:
+           - Time Domain: Observe interference patterns
+           - Frequency Domain: See spectral changes with thickness
+           - Amplitude Analysis: Identify tuning thickness
+        
+        ### Tips for Effective Use:
+        
+        - Start with default values to understand the interface
+        - For real cases, use actual well log data when available
+        - Compare different wavelet types/frequencies
+        - Observe how amplitude changes below tuning thickness
+        - Note frequency content changes in thin layers
+        """)
+    
+    with st.expander("Example Workflow"):
+        st.markdown("""
+        ### Sample Interpretation Workflow
+        
+        1. **Load well data**:
+           - Upload a CSV with your actual well logs
+           - Or use the synthetic values for demonstration
+        
+        2. **Set realistic parameters**:
+           ```python
+           Vp = [2500, 3000, 2800] m/s
+           Thickness range: 0-50 m
+           Ricker wavelet @ 30 Hz
+           ```
+        
+        3. **Analyze results**:
+           - In Time Domain tab:
+             - Observe how reflections merge as thickness decreases
+             - Note amplitude changes
+           - In Frequency Domain tab:
+             - See high frequency loss in thin layers
+           - In Amplitude Analysis:
+             - Identify the tuning thickness point
+        
+        4. **Adjust parameters**:
+           - Try different wavelet frequencies
+           - Change layer property contrasts
+           - Observe how these affect resolution
+        """)
+    
+    with st.expander("Frequently Asked Questions"):
+        st.markdown("""
+        ### FAQ
+        
+        **Q: What is tuning thickness?**
+        A: The thickness where reflections from top and base of a layer constructively interfere, producing maximum amplitude. Below this thickness, the reflections merge.
+        
+        **Q: Why use a wedge model?**
+        A: Wedge models help understand:
+        - Vertical resolution limits
+        - Amplitude vs thickness relationships
+        - Thin bed detection capabilities
+        
+        **Q: How do I choose wavelet parameters?**
+        A: Match to your actual seismic data:
+        - Central frequency for Ricker
+        - Bandwidth for bandpass
+        - Phase should match processed data (usually 0°)
+        
+        **Q: What do the colors represent?**
+        A: In the time domain, colors show amplitude (red=positive, blue=negative). In frequency domain, colors show relative amplitude at each frequency.
+        """)
 
 st.success('Modeling complete!')
