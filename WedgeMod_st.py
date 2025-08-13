@@ -326,7 +326,7 @@ with st.spinner('Generating synthetic data...'):
     syn_zo = np.array(syn_zo)
     lyr_times = np.array(lyr_times)
     lyr_indx = np.round(lyr_times/dt).astype(int)
-    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min
+    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min)
 
 # ==============================================
 # RESULTS DISPLAY
