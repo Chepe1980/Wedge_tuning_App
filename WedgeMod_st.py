@@ -8,6 +8,195 @@ from plotly.subplots import make_subplots
 from scipy.interpolate import interp1d
 import io
 
+# ==============================================
+# FUNCTION DEFINITIONS
+# ==============================================
+
+def ricker(cfreq, phase, dt, wvlt_length):
+    """Generate a Ricker wavelet with optional phase rotation."""
+    nsamp = int(wvlt_length/dt + 1)
+    t = np.linspace(-wvlt_length/2, (wvlt_length-dt)/2, int(wvlt_length/dt))
+    wvlt = (1.0 - 2.0*(np.pi**2)*(cfreq**2)*(t**2)) * np.exp(-(np.pi**2)*(cfreq**2)*(t**2))
+    
+    if phase != 0:
+        phase = phase*np.pi/180.0
+        wvlth = signal.hilbert(wvlt)
+        wvlth = np.imag(wvlth)
+        wvlt = np.cos(phase)*wvlt - np.sin(phase)*wvlth
+    
+    return t, wvlt
+
+def wvlt_bpass(f1, f2, f3, f4, phase, dt, wvlt_length):
+    """Generate a bandpass wavelet with specified frequency range."""
+    nsamp = int(wvlt_length/dt + 1)
+    freq = fftfreq(nsamp, dt)
+    freq = fftshift(freq)
+    filt = np.zeros(nsamp)
+    
+    # Build LF ramp
+    idx = np.nonzero((np.abs(freq)>=f1) & (np.abs(freq)<f2))
+    M1 = 1/(f2-f1)
+    b1 = -M1*f1
+    filt[idx] = M1*np.abs(freq)[idx]+b1
+    
+    # Build central filter flat
+    idx = np.nonzero((np.abs(freq)>=f2) & (np.abs(freq)<=f3))
+    filt[idx] = 1.0
+    
+    # Build HF ramp
+    idx = np.nonzero((np.abs(freq)>f3) & (np.abs(freq)<=f4))
+    M2 = -1/(f4-f3)
+    b2 = -M2*f4
+    filt[idx] = M2*np.abs(freq)[idx]+b2
+    
+    filt2 = ifftshift(filt)
+    Af = filt2*np.exp(np.zeros(filt2.shape)*1j)
+    wvlt = fftshift(ifft(Af))
+    wvlt = np.real(wvlt)
+    wvlt = wvlt/np.max(np.abs(wvlt))
+    
+    t = np.linspace(-wvlt_length*0.5, wvlt_length*0.5, nsamp)
+    
+    if phase != 0:
+        phase = phase*np.pi/180.0
+        wvlth = signal.hilbert(wvlt)
+        wvlth = np.imag(wvlth)
+        wvlt = np.cos(phase)*wvlt - np.sin(phase)*wvlth
+    
+    return t, wvlt
+
+def calc_rc(vp_mod, rho_mod):
+    """Calculate reflection coefficients between layers."""
+    return [(vp_mod[i+1]*rho_mod[i+1]-vp_mod[i]*rho_mod[i])/(vp_mod[i+1]*rho_mod[i+1]+vp_mod[i]*rho_mod[i]) 
+            for i in range(len(vp_mod)-1)]
+
+def calc_times(z_int, vp_mod):
+    """Calculate two-way times for layer interfaces."""
+    t_int = [z_int[0]/vp_mod[0]]
+    for i in range(1, len(z_int)):
+        t_int.append(2*(z_int[i]-z_int[i-1])/vp_mod[i] + t_int[i-1])
+    return t_int
+
+def digitize_model(rc_int, t_int, t):
+    """Convert interface times to time series of reflection coefficients."""
+    rc = np.zeros_like(t)
+    lyr = 0
+    for i in range(len(t)):
+        if lyr < len(t_int) and t[i] >= t_int[lyr]:
+            rc[i] = rc_int[lyr]
+            lyr += 1
+    return rc
+
+def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, 
+                       colormap, show_wiggle, wiggle_excursion, fill_positive, fill_color):
+    """Create interactive seismic plot with optional wiggle traces and fill."""
+    fig = make_subplots(rows=1, cols=1)
+    
+    # Heatmap background
+    fig.add_trace(go.Heatmap(
+        z=syn_zo.T,
+        x=np.arange(syn_zo.shape[0]),
+        y=t,
+        colorscale=colormap,
+        zmin=-np.max(np.abs(syn_zo)),
+        zmax=np.max(np.abs(syn_zo)),
+        showscale=True,
+        name='Seismic Amplitude'
+    ))
+    
+    # Wiggle traces with optional fill
+    if show_wiggle:
+        ntraces = syn_zo.shape[0]
+        nsamples = syn_zo.shape[1]
+        normalized_data = syn_zo / np.max(np.abs(syn_zo)) * wiggle_excursion
+        
+        for i in range(0, ntraces, max(1, ntraces//50)):
+            x_vals = np.full(nsamples, i) + normalized_data[i, :]
+            
+            # Main wiggle trace
+            fig.add_trace(go.Scatter(
+                x=x_vals,
+                y=t,
+                mode='lines',
+                line=dict(color='black', width=1),
+                showlegend=False
+            ))
+            
+            # Fill positive area if enabled
+            if fill_positive:
+                fill_x = np.where(normalized_data[i, :] > 0, x_vals, i)
+                fig.add_trace(go.Scatter(
+                    x=fill_x,
+                    y=t,
+                    fill='tozerox',
+                    fillcolor=fill_color,
+                    mode='none',
+                    showlegend=False
+                ))
+    
+    # Layer boundaries
+    fig.add_trace(go.Scatter(
+        x=np.arange(lyr_times.shape[0]),
+        y=lyr_times[:, 0],
+        mode='lines',
+        line=dict(color='blue', width=2),
+        name='Upper Interface'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=np.arange(lyr_times.shape[0]),
+        y=lyr_times[:, 1],
+        mode='lines',
+        line=dict(color='red', width=2),
+        name='Lower Interface'
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        height=700,
+        title='Seismic Wedge Model',
+        xaxis_title='Trace Number (Thickness)',
+        yaxis_title='Time (s)',
+        yaxis=dict(autorange='reversed'),
+        hovermode='closest',
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    
+    # Set time range
+    fig.update_yaxes(range=[max_plot_time, min_plot_time])
+    
+    return fig
+
+def create_amplitude_plot(syn_zo, lyr_indx, tuning_thickness):
+    """Create amplitude vs thickness plot showing tuning effect."""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=np.arange(syn_zo.shape[0]),
+        y=syn_zo[:, lyr_indx[0, 0]],
+        line=dict(color='blue', width=2),
+        name='Upper Interface Amplitude'
+    ))
+    
+    fig.add_vline(
+        x=tuning_thickness/dz_step,
+        line=dict(color='black', width=2, dash='dash'),
+        annotation_text=f'Tuning: {tuning_thickness:.1f} m'
+    )
+    
+    fig.update_layout(
+        height=300,
+        title='Amplitude vs Thickness',
+        xaxis_title='Thickness (m)',
+        yaxis_title='Amplitude'
+    )
+    
+    return fig
+
+# ==============================================
+# STREAMLIT APP UI
+# ==============================================
+
 # Set page config
 st.set_page_config(layout="wide", page_title="Advanced Seismic Wedge Modeling")
 
@@ -103,87 +292,9 @@ fill_color = st.sidebar.color_picker("Fill Color", "#4B8BBE") if fill_positive e
 st.title("Advanced Seismic Wedge Modeling App")
 st.write("Interactive wedge modeling with well log import and enhanced visualization")
 
-# Functions (same as before but with enhanced wiggle fill)
-def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, 
-                       colormap, show_wiggle, wiggle_excursion, fill_positive, fill_color):
-    fig = make_subplots(rows=1, cols=1)
-    
-    # Heatmap
-    fig.add_trace(go.Heatmap(
-        z=syn_zo.T,
-        x=np.arange(syn_zo.shape[0]),
-        y=t,
-        colorscale=colormap,
-        zmin=-np.max(np.abs(syn_zo)),
-        zmax=np.max(np.abs(syn_zo)),
-        showscale=True,
-        name='Seismic Amplitude'
-    ))
-    
-    # Wiggle traces with optional fill
-    if show_wiggle:
-        ntraces = syn_zo.shape[0]
-        nsamples = syn_zo.shape[1]
-        normalized_data = syn_zo / np.max(np.abs(syn_zo)) * wiggle_excursion
-        
-        for i in range(0, ntraces, max(1, ntraces//50)):
-            x_vals = np.full(nsamples, i) + normalized_data[i, :]
-            
-            # Main wiggle trace
-            fig.add_trace(go.Scatter(
-                x=x_vals,
-                y=t,
-                mode='lines',
-                line=dict(color='black', width=1),
-                showlegend=False
-            ))
-            
-            # Fill positive area if enabled
-            if fill_positive:
-                fill_x = np.where(normalized_data[i, :] > 0, x_vals, i)
-                fig.add_trace(go.Scatter(
-                    x=fill_x,
-                    y=t,
-                    fill='tozerox',
-                    fillcolor=fill_color,
-                    mode='none',
-                    showlegend=False
-                ))
-    
-    # Layer boundaries
-    fig.add_trace(go.Scatter(
-        x=np.arange(lyr_times.shape[0]),
-        y=lyr_times[:, 0],
-        mode='lines',
-        line=dict(color='blue', width=2),
-        name='Upper Interface'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=np.arange(lyr_times.shape[0]),
-        y=lyr_times[:, 1],
-        mode='lines',
-        line=dict(color='red', width=2),
-        name='Lower Interface'
-    ))
-    
-    # Update layout
-    fig.update_layout(
-        height=700,
-        title='Seismic Wedge Model',
-        xaxis_title='Trace Number (Thickness)',
-        yaxis_title='Time (s)',
-        yaxis=dict(autorange='reversed'),
-        hovermode='closest',
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-    
-    # Set time range
-    fig.update_yaxes(range=[max_plot_time, min_plot_time])
-    
-    return fig
-
-# [Keep all other existing functions: ricker(), wvlt_bpass(), calc_rc(), calc_times(), digitize_model(), create_amplitude_plot()]
+# ==============================================
+# MODEL PROCESSING
+# ==============================================
 
 # Generate synthetic data
 with st.spinner('Generating synthetic data...'):
@@ -215,9 +326,13 @@ with st.spinner('Generating synthetic data...'):
     syn_zo = np.array(syn_zo)
     lyr_times = np.array(lyr_times)
     lyr_indx = np.round(lyr_times/dt).astype(int)
-    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min)
+    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min
 
-# Display results
+# ==============================================
+# RESULTS DISPLAY
+# ==============================================
+
+# Display results in tabs
 tab1, tab2, tab3 = st.tabs(["Seismic Model", "Amplitude Analysis", "Wavelet"])
 
 with tab1:
