@@ -225,7 +225,7 @@ def create_well_log_plot(df, layer1_depth, layer2_depth, layer3_depth):
         mode='markers',
         name='Layer 1',
         marker=dict(color='red', size=10)
-    )
+    ))
     
     fig.add_trace(go.Scatter(
         x=[df.loc[layer2_depth, 'Vp'], 
