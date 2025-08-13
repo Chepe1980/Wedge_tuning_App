@@ -85,17 +85,42 @@ def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time,
                        vp_mod, vs_mod, rho_mod):
     fig = make_subplots(rows=1, cols=1)
     
+    # Validate and normalize colormap
+    valid_colormaps = [
+        "RdBu", "seismic", "viridis", "plasma", 
+        "inferno", "magma", "cividis", "jet",
+        "rainbow", "turbo", "hsv", "coolwarm"
+    ]
+    if colormap not in valid_colormaps:
+        colormap = "RdBu"  # Default to RdBu if invalid
+    
     # Heatmap background
-    fig.add_trace(go.Heatmap(
-        z=syn_zo.T,
-        x=np.arange(syn_zo.shape[0]),
-        y=t,
-        colorscale=colormap,
-        zmin=-np.max(np.abs(syn_zo)),
-        zmax=np.max(np.abs(syn_zo)),
-        showscale=True,
-        name='Seismic Amplitude'
-    ))
+    try:
+        fig.add_trace(go.Heatmap(
+            z=syn_zo.T,
+            x=np.arange(syn_zo.shape[0]),
+            y=t,
+            colorscale=colormap,
+            zmin=-np.max(np.abs(syn_zo)),
+            zmax=np.max(np.abs(syn_zo)),
+            showscale=True,
+            name='Seismic Amplitude'
+        ))
+    except Exception as e:
+        st.error(f"Error creating heatmap: {str(e)}")
+        # Fallback to default colormap
+        fig.add_trace(go.Heatmap(
+            z=syn_zo.T,
+            x=np.arange(syn_zo.shape[0]),
+            y=t,
+            colorscale="RdBu",
+            zmin=-np.max(np.abs(syn_zo)),
+            zmax=np.max(np.abs(syn_zo)),
+            showscale=True,
+            name='Seismic Amplitude'
+        ))
+    
+    # [Rest of the function remains the same...]
     
     # Wiggle traces with proper positive fill
     if show_wiggle:
