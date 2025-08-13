@@ -1,15 +1,13 @@
-# seismic_wedge_modeling_app.py
 import streamlit as st
 import numpy as np
 import scipy.signal as signal
 from numpy.fft import fft, ifft, fftfreq, fftshift, ifftshift
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pywt
 from scipy.interpolate import interp1d
 
 # Set page config
-st.set_page_config(layout="wide", page_title="Enhanced Seismic Wedge Modeling")
+st.set_page_config(layout="wide", page_title="Seismic Wedge Modeling")
 
 # Sidebar for user inputs
 st.sidebar.header("Model Parameters")
@@ -38,24 +36,18 @@ dz_step = st.sidebar.number_input("Thickness step (m)", value=1.0)
 
 # Wavelet parameters
 st.sidebar.subheader("Wavelet Parameters")
-wvlt_type = st.sidebar.selectbox("Wavelet type", ["Ricker", "Bandpass", "PyWavelet"])
+wvlt_type = st.sidebar.selectbox("Wavelet type", ["Ricker", "Bandpass"])
 wvlt_length = st.sidebar.number_input("Wavelet length (s)", value=0.128)
 wvlt_phase = st.sidebar.number_input("Wavelet phase (degrees)", value=0.0)
 wvlt_scalar = st.sidebar.number_input("Wavelet amplitude scalar", value=1.0)
 
 if wvlt_type == "Ricker":
     wvlt_cfreq = st.sidebar.number_input("Central frequency (Hz)", value=30.0)
-elif wvlt_type == "Bandpass":
+else:
     f1 = st.sidebar.number_input("Low truncation freq (Hz)", value=5.0)
     f2 = st.sidebar.number_input("Low cut freq (Hz)", value=10.0)
     f3 = st.sidebar.number_input("High cut freq (Hz)", value=50.0)
     f4 = st.sidebar.number_input("High truncation freq (Hz)", value=65.0)
-else:  # PyWavelet
-    wavelet_families = pywt.families()
-    selected_family = st.sidebar.selectbox("Wavelet Family", wavelet_families)
-    wavelets = pywt.wavelist(family=selected_family)
-    selected_wavelet = st.sidebar.selectbox("Wavelet Type", wavelets)
-    wavelet_scale = st.sidebar.number_input("Wavelet Scale", value=1.0, min_value=0.1, max_value=10.0)
 
 # Time parameters
 st.sidebar.subheader("Time Parameters")
@@ -67,22 +59,13 @@ dt = st.sidebar.number_input("Time step (s)", value=0.0001)
 st.sidebar.subheader("Display Parameters")
 min_plot_time = st.sidebar.number_input("Min display time (s)", value=0.15)
 max_plot_time = st.sidebar.number_input("Max display time (s)", value=0.3)
-colormap = st.sidebar.selectbox("Seismic Colormap", 
-                               ["RdBu", "seismic", "viridis", "plasma", "inferno", "magma", "cividis"])
+colormap = st.sidebar.selectbox("Seismic Colormap", ["RdBu", "seismic", "viridis"])
 show_wiggle = st.sidebar.checkbox("Show Wiggle Traces", value=True)
 wiggle_excursion = st.sidebar.number_input("Wiggle Excursion", value=0.5) if show_wiggle else 0.5
 
 # Main app
-st.title("Enhanced Seismic Wedge Modeling App")
-st.write("""
-This app generates a synthetic seismic section for a 3-layer wedge model with interactive visualization.
-Adjust parameters in the sidebar and view the results below.
-""")
-
-# Organize model parameters
-vp_mod = [vp1, vp2, vp3]
-vs_mod = [vs1, vs2, vs3]
-rho_mod = [rho1, rho2, rho3]
+st.title("Seismic Wedge Modeling App")
+st.write("Interactive wedge modeling with Plotly visualizations")
 
 # Functions
 def ricker(cfreq, phase, dt, wvlt_length):
@@ -136,105 +119,55 @@ def wvlt_bpass(f1, f2, f3, f4, phase, dt, wvlt_length):
     
     return t, wvlt
 
-def pywavelet_wavelet(wavelet_name, scale, phase, dt, wvlt_length):
-    nsamp = int(wvlt_length/dt + 1)
-    t = np.linspace(-wvlt_length/2, wvlt_length/2, nsamp)
-    
-    # Generate wavelet
-    wavelet = pywt.ContinuousWavelet(wavelet_name)
-    psi, x = pywt.ContinuousWavelet.wavefun(wavelet, level=10)
-    
-    # Interpolate to desired time points
-    f = interp1d(x, psi, kind='cubic', fill_value='extrapolate')
-    wvlt = f(t/scale)
-    
-    # Normalize
-    wvlt = wvlt / np.max(np.abs(wvlt))
-    
-    if phase != 0:
-        phase = phase*np.pi/180.0
-        wvlth = signal.hilbert(wvlt)
-        wvlth = np.imag(wvlth)
-        wvlt = np.cos(phase)*wvlt - np.sin(phase)*wvlth
-    
-    return t, wvlt
-
 def calc_rc(vp_mod, rho_mod):
-    nlayers = len(vp_mod)
-    nint = nlayers - 1
-    rc_int = []
-    for i in range(0, nint):
-        buf1 = vp_mod[i+1]*rho_mod[i+1]-vp_mod[i]*rho_mod[i]
-        buf2 = vp_mod[i+1]*rho_mod[i+1]+vp_mod[i]*rho_mod[i]
-        buf3 = buf1/buf2
-        rc_int.append(buf3)
-    return rc_int
+    return [(vp_mod[i+1]*rho_mod[i+1]-vp_mod[i]*rho_mod[i])/(vp_mod[i+1]*rho_mod[i+1]+vp_mod[i]*rho_mod[i]) 
+            for i in range(len(vp_mod)-1)]
 
 def calc_times(z_int, vp_mod):
-    nlayers = len(vp_mod)
-    nint = nlayers - 1
-    t_int = []
-    for i in range(0, nint):
-        if i == 0:
-            tbuf = z_int[i]/vp_mod[i]
-            t_int.append(tbuf)
-        else:
-            zdiff = z_int[i]-z_int[i-1]
-            tbuf = 2*zdiff/vp_mod[i] + t_int[i-1]
-            t_int.append(tbuf)
+    t_int = [z_int[0]/vp_mod[0]]
+    for i in range(1, len(z_int)):
+        t_int.append(2*(z_int[i]-z_int[i-1])/vp_mod[i] + t_int[i-1])
     return t_int
 
 def digitize_model(rc_int, t_int, t):
-    nlayers = len(rc_int)
-    nint = nlayers - 1
-    nsamp = len(t)
-    rc = list(np.zeros(nsamp,dtype='float'))
+    rc = np.zeros_like(t)
     lyr = 0
-    
-    for i in range(0, nsamp):
-        if t[i] >= t_int[lyr]:
+    for i in range(len(t)):
+        if lyr < len(t_int) and t[i] >= t_int[lyr]:
             rc[i] = rc_int[lyr]
-            lyr = lyr + 1    
-        if lyr > nint:
-            break
+            lyr += 1
     return rc
 
 def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, colormap, show_wiggle, wiggle_excursion):
     fig = make_subplots(rows=1, cols=1)
     
-    # Create heatmap for seismic data
+    # Heatmap
     fig.add_trace(go.Heatmap(
         z=syn_zo.T,
         x=np.arange(syn_zo.shape[0]),
         y=t,
         colorscale=colormap,
         zmin=-np.max(np.abs(syn_zo)),
-        zmax=np.max(np.abs(syn_zo)),
-        showscale=True,
-        name='Seismic Amplitude'
+        zmax=np.max(np.abs(syn_zo))
     ))
     
-    # Add wiggle traces if enabled
+    # Wiggle traces
     if show_wiggle:
         ntraces = syn_zo.shape[0]
-        nsamples = syn_zo.shape[1]
-        normalized_data = syn_zo / np.max(np.abs(syn_zo)) * wiggle_excursion
-        
-        for i in range(0, ntraces, max(1, ntraces//50)):  # Plot every Nth trace to avoid overcrowding
+        norm_data = syn_zo / np.max(np.abs(syn_zo)) * wiggle_excursion
+        for i in range(0, ntraces, max(1, ntraces//50)):
             fig.add_trace(go.Scatter(
-                x=np.full(nsamples, i) + normalized_data[i, :],
+                x=np.full(len(t), i) + norm_data[i, :],
                 y=t,
                 mode='lines',
                 line=dict(color='black', width=1),
-                name=f'Trace {i}',
                 showlegend=False
             ))
     
-    # Add layer boundaries
+    # Layer boundaries
     fig.add_trace(go.Scatter(
         x=np.arange(lyr_times.shape[0]),
         y=lyr_times[:, 0],
-        mode='lines',
         line=dict(color='blue', width=2),
         name='Upper Interface'
     ))
@@ -242,12 +175,10 @@ def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, colo
     fig.add_trace(go.Scatter(
         x=np.arange(lyr_times.shape[0]),
         y=lyr_times[:, 1],
-        mode='lines',
         line=dict(color='red', width=2),
         name='Lower Interface'
     ))
     
-    # Update layout
     fig.update_layout(
         height=600,
         title='Seismic Wedge Model',
@@ -256,112 +187,88 @@ def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, colo
         yaxis=dict(autorange='reversed'),
         hovermode='closest'
     )
-    
-    # Set time range
     fig.update_yaxes(range=[max_plot_time, min_plot_time])
     
     return fig
 
-def create_amplitude_plot(syn_zo, lyr_indx, tuning_trace, tuning_thickness):
+def create_amplitude_plot(syn_zo, lyr_indx, tuning_thickness):
     fig = go.Figure()
     
-    # Plot amplitude at upper interface
     fig.add_trace(go.Scatter(
         x=np.arange(syn_zo.shape[0]),
-        y=syn_zo[:, lyr_indx[:, 0][0]],
-        mode='lines',
+        y=syn_zo[:, lyr_indx[0, 0]],
         line=dict(color='blue', width=2),
         name='Upper Interface Amplitude'
     ))
     
-    # Add tuning thickness marker
     fig.add_vline(
-        x=tuning_trace,
+        x=tuning_thickness/dz_step,
         line=dict(color='black', width=2, dash='dash'),
-        annotation_text=f'Tuning Thickness: {tuning_thickness:.1f} m',
-        annotation_position="top right"
+        annotation_text=f'Tuning: {tuning_thickness:.1f} m'
     )
     
-    # Update layout
     fig.update_layout(
         height=300,
-        title='Upper Interface Amplitude vs Wedge Thickness',
+        title='Amplitude vs Thickness',
         xaxis_title='Thickness (m)',
-        yaxis_title='Amplitude',
-        showlegend=True
+        yaxis_title='Amplitude'
     )
     
     return fig
 
 # Generate synthetic data
 with st.spinner('Generating synthetic data...'):
-    nlayers = len(vp_mod)
-    nint = nlayers - 1
-    nmodel = int((dz_max-dz_min)/dz_step+1)
-
+    vp_mod = [vp1, vp2, vp3]
+    rho_mod = [rho1, rho2, rho3]
+    nmodel = int((dz_max-dz_min)/dz_step + 1)
+    
     # Generate wavelet
     if wvlt_type == 'Ricker':
         wvlt_t, wvlt_amp = ricker(wvlt_cfreq, wvlt_phase, dt, wvlt_length)
-    elif wvlt_type == 'Bandpass':
-        wvlt_t, wvlt_amp = wvlt_bpass(f1, f2, f3, f4, wvlt_phase, dt, wvlt_length)
     else:
-        wvlt_t, wvlt_amp = pywavelet_wavelet(selected_wavelet, wavelet_scale, wvlt_phase, dt, wvlt_length)
-
-    wvlt_amp = wvlt_scalar * wvlt_amp
+        wvlt_t, wvlt_amp = wvlt_bpass(f1, f2, f3, f4, wvlt_phase, dt, wvlt_length)
+    
+    wvlt_amp *= wvlt_scalar
     rc_int = calc_rc(vp_mod, rho_mod)
-
+    
     syn_zo = []
-    rc_zo = []
     lyr_times = []
-    for model in range(0, nmodel):
-        z_int = [500.0]
-        z_int.append(z_int[0]+dz_min+dz_step*model)
+    t = np.arange(tmin, tmax, dt)
+    
+    for model in range(nmodel):
+        z_int = [500.0, 500.0 + dz_min + dz_step*model]
         t_int = calc_times(z_int, vp_mod)
         lyr_times.append(t_int)
-        
-        nsamp = int((tmax-tmin)/dt) + 1
-        t = []
-        for i in range(0,nsamp):
-            t.append(i*dt)
-            
         rc = digitize_model(rc_int, t_int, t)
-        rc_zo.append(rc)
-        syn_buf = np.convolve(rc, wvlt_amp, mode='same')
-        syn_buf = list(syn_buf)
-        syn_zo.append(syn_buf)
+        syn_zo.append(np.convolve(rc, wvlt_amp, mode='same'))
     
     syn_zo = np.array(syn_zo)
-    t = np.array(t)
     lyr_times = np.array(lyr_times)
-    lyr_indx = np.array(np.round(lyr_times/dt), dtype='int16')
-    tuning_trace = np.argmax(np.abs(syn_zo.T)) % syn_zo.T.shape[1]
-    tuning_thickness = tuning_trace * dz_step + dz_min
+    lyr_indx = np.round(lyr_times/dt).astype(int)
+    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min
 
-# Create and display plots
-st.subheader("Seismic Wedge Model Visualization")
+# Display results
+st.subheader("Seismic Wedge Model")
 seismic_fig = create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, 
                                  colormap, show_wiggle, wiggle_excursion)
 st.plotly_chart(seismic_fig, use_container_width=True)
 
 st.subheader("Amplitude Analysis")
-amplitude_fig = create_amplitude_plot(syn_zo, lyr_indx, tuning_trace, tuning_thickness)
+amplitude_fig = create_amplitude_plot(syn_zo, lyr_indx, tuning_thickness)
 st.plotly_chart(amplitude_fig, use_container_width=True)
 
-# Display wavelet
-st.subheader("Wavelet Visualization")
+st.subheader("Source Wavelet")
 wavelet_fig = go.Figure()
 wavelet_fig.add_trace(go.Scatter(
     x=wvlt_t,
     y=wvlt_amp,
-    mode='lines',
-    line=dict(color='blue', width=2),
-    name='Wavelet'
+    line=dict(color='blue', width=2)
 ))
 wavelet_fig.update_layout(
-    title='Source Wavelet',
+    title='Wavelet',
     xaxis_title='Time (s)',
     yaxis_title='Amplitude'
 )
 st.plotly_chart(wavelet_fig, use_container_width=True)
 
-st.success('Analysis complete!')
+st.success('Modeling complete!')
