@@ -6,14 +6,12 @@ from numpy.fft import fft, ifft, fftfreq, fftshift, ifftshift
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.interpolate import interp1d
-import io
 
 # ==============================================
 # FUNCTION DEFINITIONS
 # ==============================================
 
 def ricker(cfreq, phase, dt, wvlt_length):
-    """Generate a Ricker wavelet with optional phase rotation."""
     nsamp = int(wvlt_length/dt + 1)
     t = np.linspace(-wvlt_length/2, (wvlt_length-dt)/2, int(wvlt_length/dt))
     wvlt = (1.0 - 2.0*(np.pi**2)*(cfreq**2)*(t**2)) * np.exp(-(np.pi**2)*(cfreq**2)*(t**2))
@@ -27,7 +25,6 @@ def ricker(cfreq, phase, dt, wvlt_length):
     return t, wvlt
 
 def wvlt_bpass(f1, f2, f3, f4, phase, dt, wvlt_length):
-    """Generate a bandpass wavelet with specified frequency range."""
     nsamp = int(wvlt_length/dt + 1)
     freq = fftfreq(nsamp, dt)
     freq = fftshift(freq)
@@ -66,19 +63,16 @@ def wvlt_bpass(f1, f2, f3, f4, phase, dt, wvlt_length):
     return t, wvlt
 
 def calc_rc(vp_mod, rho_mod):
-    """Calculate reflection coefficients between layers."""
     return [(vp_mod[i+1]*rho_mod[i+1]-vp_mod[i]*rho_mod[i])/(vp_mod[i+1]*rho_mod[i+1]+vp_mod[i]*rho_mod[i]) 
             for i in range(len(vp_mod)-1)]
 
 def calc_times(z_int, vp_mod):
-    """Calculate two-way times for layer interfaces."""
     t_int = [z_int[0]/vp_mod[0]]
     for i in range(1, len(z_int)):
         t_int.append(2*(z_int[i]-z_int[i-1])/vp_mod[i] + t_int[i-1])
     return t_int
 
 def digitize_model(rc_int, t_int, t):
-    """Convert interface times to time series of reflection coefficients."""
     rc = np.zeros_like(t)
     lyr = 0
     for i in range(len(t)):
@@ -89,7 +83,6 @@ def digitize_model(rc_int, t_int, t):
 
 def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time, 
                        colormap, show_wiggle, wiggle_excursion, fill_positive, fill_color):
-    """Create interactive seismic plot with optional wiggle traces and fill."""
     fig = make_subplots(rows=1, cols=1)
     
     # Heatmap background
@@ -104,35 +97,56 @@ def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time,
         name='Seismic Amplitude'
     ))
     
-    # Wiggle traces with optional fill
+    # Wiggle traces with proper positive fill
     if show_wiggle:
         ntraces = syn_zo.shape[0]
         nsamples = syn_zo.shape[1]
         normalized_data = syn_zo / np.max(np.abs(syn_zo)) * wiggle_excursion
         
         for i in range(0, ntraces, max(1, ntraces//50)):
-            x_vals = np.full(nsamples, i) + normalized_data[i, :]
+            trace_x = np.full(nsamples, i)
+            trace_y = t
+            trace_vals = normalized_data[i, :]
             
             # Main wiggle trace
             fig.add_trace(go.Scatter(
-                x=x_vals,
-                y=t,
+                x=trace_x + trace_vals,
+                y=trace_y,
                 mode='lines',
                 line=dict(color='black', width=1),
                 showlegend=False
             ))
             
-            # Fill positive area if enabled
+            # Fill only positive parts of the signal
             if fill_positive:
-                fill_x = np.where(normalized_data[i, :] > 0, x_vals, i)
-                fig.add_trace(go.Scatter(
-                    x=fill_x,
-                    y=t,
-                    fill='tozerox',
-                    fillcolor=fill_color,
-                    mode='none',
-                    showlegend=False
-                ))
+                # Find segments where signal is positive
+                positive_segments = []
+                current_segment = []
+                for j in range(len(trace_vals)):
+                    if trace_vals[j] > 0:
+                        current_segment.append(j)
+                    elif current_segment:
+                        positive_segments.append(current_segment)
+                        current_segment = []
+                
+                if current_segment:
+                    positive_segments.append(current_segment)
+                
+                # Add fill for each positive segment
+                for segment in positive_segments:
+                    if len(segment) > 1:  # Need at least 2 points to fill
+                        seg_x = trace_x[segment] + trace_vals[segment]
+                        seg_y = trace_y[segment]
+                        
+                        fig.add_trace(go.Scatter(
+                            x=np.concatenate([seg_x, seg_x[::-1]]),
+                            y=np.concatenate([seg_y, seg_y[::-1]]),
+                            fill='toself',
+                            fillcolor=fill_color,
+                            mode='none',
+                            showlegend=False,
+                            hoverinfo='skip'
+                        ))
     
     # Layer boundaries
     fig.add_trace(go.Scatter(
@@ -168,7 +182,6 @@ def create_seismic_plot(syn_zo, t, lyr_times, min_plot_time, max_plot_time,
     return fig
 
 def create_amplitude_plot(syn_zo, lyr_indx, tuning_thickness):
-    """Create amplitude vs thickness plot showing tuning effect."""
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
@@ -197,59 +210,74 @@ def create_amplitude_plot(syn_zo, lyr_indx, tuning_thickness):
 # STREAMLIT APP UI
 # ==============================================
 
-# Set page config
 st.set_page_config(layout="wide", page_title="Advanced Seismic Wedge Modeling")
 
-# Available colormaps
 COLORMAPS = [
     "RdBu", "seismic", "viridis", "plasma", 
     "inferno", "magma", "cividis", "jet",
     "rainbow", "turbo", "hsv", "coolwarm"
 ]
 
-# Sidebar for user inputs
 st.sidebar.header("Model Parameters")
 
-# Model source selection
-model_source = st.sidebar.radio("Model Input Source", ["Manual Parameters", "Well Log CSV"])
+# Well Log CSV Upload
+uploaded_file = st.sidebar.file_uploader("Upload Well Log CSV (Vp, Vs, Density)", type="csv")
 
-if model_source == "Well Log CSV":
-    st.sidebar.subheader("Well Log Data Upload")
-    uploaded_file = st.sidebar.file_uploader("Upload CSV with Vp, Vs, and Density", type="csv")
-    
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            required_cols = ['Vp', 'Vs', 'Density']
-            if all(col in df.columns for col in required_cols):
-                # Extract values for three layers (simple approach - takes first, middle, last values)
-                vp1, vp2, vp3 = df['Vp'].iloc[0], df['Vp'].iloc[len(df)//2], df['Vp'].iloc[-1]
-                vs1, vs2, vs3 = df['Vs'].iloc[0], df['Vs'].iloc[len(df)//2], df['Vs'].iloc[-1]
-                rho1, rho2, rho3 = df['Density'].iloc[0], df['Density'].iloc[len(df)//2], df['Density'].iloc[-1]
-                
-                st.sidebar.success("Well log data loaded successfully!")
-            else:
-                st.sidebar.error("CSV must contain columns: Vp, Vs, Density")
-                model_source = "Manual Parameters"  # Fallback to manual
-        except Exception as e:
-            st.sidebar.error(f"Error reading CSV: {str(e)}")
-            model_source = "Manual Parameters"  # Fallback to manual
-
-# Layer properties
-st.sidebar.subheader("Layer Properties")
-col1, col2, col3 = st.sidebar.columns(3)
-with col1:
-    vp1 = st.number_input("Layer 1 Vp (m/s)", value=2500.0 if model_source == "Manual Parameters" else vp1)
-    vs1 = st.number_input("Layer 1 Vs (m/s)", value=1200.0 if model_source == "Manual Parameters" else vs1)
-    rho1 = st.number_input("Layer 1 Density (g/cc)", value=1.95 if model_source == "Manual Parameters" else rho1)
-with col2:
-    vp2 = st.number_input("Layer 2 Vp (m/s)", value=2600.0 if model_source == "Manual Parameters" else vp2)
-    vs2 = st.number_input("Layer 2 Vs (m/s)", value=1300.0 if model_source == "Manual Parameters" else vs2)
-    rho2 = st.number_input("Layer 2 Density (g/cc)", value=2.0 if model_source == "Manual Parameters" else rho2)
-with col3:
-    vp3 = st.number_input("Layer 3 Vp (m/s)", value=2550.0 if model_source == "Manual Parameters" else vp3)
-    vs3 = st.number_input("Layer 3 Vs (m/s)", value=1200.0 if model_source == "Manual Parameters" else vs3)
-    rho3 = st.number_input("Layer 3 Density (g/cc)", value=1.98 if model_source == "Manual Parameters" else rho3)
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
+        if all(col in df.columns for col in ['Vp', 'Vs', 'Density']):
+            # Create depth sliders for each layer
+            min_depth = df.index.min()
+            max_depth = df.index.max()
+            
+            st.sidebar.subheader("Layer Selection from Well Log")
+            layer1_depth = st.sidebar.slider("Layer 1 Depth", min_depth, max_depth, min_depth)
+            layer2_depth = st.sidebar.slider("Layer 2 Depth", min_depth, max_depth, (min_depth + max_depth)//2)
+            layer3_depth = st.sidebar.slider("Layer 3 Depth", min_depth, max_depth, max_depth)
+            
+            # Get values at selected depths
+            vp1 = df.loc[layer1_depth, 'Vp']
+            vs1 = df.loc[layer1_depth, 'Vs']
+            rho1 = df.loc[layer1_depth, 'Density']
+            
+            vp2 = df.loc[layer2_depth, 'Vp']
+            vs2 = df.loc[layer2_depth, 'Vs']
+            rho2 = df.loc[layer2_depth, 'Density']
+            
+            vp3 = df.loc[layer3_depth, 'Vp']
+            vs3 = df.loc[layer3_depth, 'Vs']
+            rho3 = df.loc[layer3_depth, 'Density']
+            
+            st.sidebar.success("Well log data loaded successfully!")
+        else:
+            st.sidebar.error("CSV must contain columns: Vp, Vs, Density")
+            # Fallback to default values
+            vp1, vs1, rho1 = 2500.0, 1200.0, 1.95
+            vp2, vs2, rho2 = 2600.0, 1300.0, 2.0
+            vp3, vs3, rho3 = 2550.0, 1200.0, 1.98
+    except Exception as e:
+        st.sidebar.error(f"Error reading CSV: {str(e)}")
+        # Fallback to default values
+        vp1, vs1, rho1 = 2500.0, 1200.0, 1.95
+        vp2, vs2, rho2 = 2600.0, 1300.0, 2.0
+        vp3, vs3, rho3 = 2550.0, 1200.0, 1.98
+else:
+    # Manual input if no CSV uploaded
+    st.sidebar.subheader("Layer Properties")
+    col1, col2, col3 = st.sidebar.columns(3)
+    with col1:
+        vp1 = st.number_input("Layer 1 Vp (m/s)", value=2500.0)
+        vs1 = st.number_input("Layer 1 Vs (m/s)", value=1200.0)
+        rho1 = st.number_input("Layer 1 Density (g/cc)", value=1.95)
+    with col2:
+        vp2 = st.number_input("Layer 2 Vp (m/s)", value=2600.0)
+        vs2 = st.number_input("Layer 2 Vs (m/s)", value=1300.0)
+        rho2 = st.number_input("Layer 2 Density (g/cc)", value=2.0)
+    with col3:
+        vp3 = st.number_input("Layer 3 Vp (m/s)", value=2550.0)
+        vs3 = st.number_input("Layer 3 Vs (m/s)", value=1200.0)
+        rho3 = st.number_input("Layer 3 Density (g/cc)", value=1.98)
 
 # Wedge parameters
 st.sidebar.subheader("Wedge Geometry")
@@ -296,10 +324,8 @@ st.write("Interactive wedge modeling with well log import and enhanced visualiza
 # MODEL PROCESSING
 # ==============================================
 
-# Generate synthetic data
 with st.spinner('Generating synthetic data...'):
     vp_mod = [vp1, vp2, vp3]
-    vs_mod = [vs1, vs2, vs3]
     rho_mod = [rho1, rho2, rho3]
     nmodel = int((dz_max-dz_min)/dz_step + 1)
     
@@ -326,13 +352,12 @@ with st.spinner('Generating synthetic data...'):
     syn_zo = np.array(syn_zo)
     lyr_times = np.array(lyr_times)
     lyr_indx = np.round(lyr_times/dt).astype(int)
-    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min)
+    tuning_thickness = (np.argmax(np.abs(syn_zo[:, lyr_indx[0, 0]])) * dz_step + dz_min
 
 # ==============================================
 # RESULTS DISPLAY
 # ==============================================
 
-# Display results in tabs
 tab1, tab2, tab3 = st.tabs(["Seismic Model", "Amplitude Analysis", "Wavelet"])
 
 with tab1:
